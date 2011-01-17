@@ -1,0 +1,17 @@
+sites/default/
+/sites/all/modules/site_settings/
+cache/
+/profiles/
+/scripts/
+/includes/
+/misc/
+/modules/
+/stats/
+/themes/
+/_db_backups/
+/*.php
+/*.txt
+/*.ini
+/web.config
+.htaccess
+
