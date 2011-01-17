@@ -1,0 +1,148 @@
+<?php
+
+function problem_archive_search_form($form, &$form_state)
+{
+	dsm($form);
+	dsm($form_state);
+	
+	$form = array();
+
+	$header = array(
+		'problemCats' => 'Problem Categories',
+	);
+
+	$options1 = array();
+	$options2 = array();
+
+	$allCats = array(
+		"String Manipulation",
+		"String Parsing",
+		"Simulation",
+		"Encryption/Compression",
+		"Sorting",
+		"Brute Force",
+		"Greedy",
+		"Recursion",
+		"Simple Search, Iteration",
+		"Geometry",
+		"Graph Theory",
+		"Dynamic Programming",
+		"Math",
+		"Simple Math",
+		"Advanced Math",
+	); 
+
+	for($i=0;$i<=7;$i++)
+		$options1[ $allCats[ $i ] ] = array( 'problemCats' => $allCats[ $i ] );
+
+	for($i=8;$i<count( $allCats );$i++)
+		$options2[ $allCats[ $i ] ] = array( 'problemCats' => $allCats[ $i ] );
+
+	$form['nodes1'] = array(
+		'#type' => 'tableselect',
+		'#header' => $header,
+		'#options' => $options1,
+		'#attributes' => array( 'style' => 'float:left; width:45%' ),
+		//'#default_value' => variable_get( 'nodes1', array( 0,3 ) 
+		'#empty' => t('No items available'),
+	);
+
+	$form['nodes2'] = array(
+		'#type' => 'tableselect',
+		'#header' => $header,
+		'#options' => $options2,
+		'#attributes' => array( 'style' => 'float:left; width:45%' ),
+		'#empty' => t('No items available'),
+	);
+
+	$form['matchCats'] = array(
+		'#type' => 'radios',
+		'#title' => 'Matching Options',
+		'#options' => array( 'Match Any Category', 'Match All Categories' ),
+		'#default_value' => variable_get('matchCats', 0),
+	);
+
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => 'Search',
+	);
+	
+	$header = array( 
+		array('data' => t('Problem Name'), 'field' => 'name'),
+		array('data' => t('Difficulty'), 'field' => 'diff'),
+		array('data' => t('Categories'), 'field' => 'cat'),
+		array('data' => t('Source'), 'field' => 'src'),
+		array('data' => t('Used In'), 'field' => 'usedIn'),
+		array('data' => t('Date'), 'field' => 'date', 'sort' => 'desc'),
+		array('data' => t('Analysis'), 'field' => 'analysis'),
+	);
+	
+	db_gateway_connect();
+
+	$ts = tablesort_init($header);
+	
+	$total = db_gateway_query_value("SELECT COUNT(*) AS num FROM Problems");
+	
+	$num_per_page = 25;
+
+	$curPage = pager_default_initialize($total, $num_per_page);
+	
+	$offset = $num_per_page * $curPage;
+					
+	$rows = db_gateway_query_rows("SELECT name, map_diff_text AS diff, cat, src, usedIn, date 
+									FROM Problems, map_difficulty 
+									WHERE lvl = map_diff_id 
+									ORDER BY " . $ts['sql'] . ' ' . $ts['sort'] . "
+									LIMIT " . $offset . ',' . $num_per_page);
+	
+	$form['#suffix'] = theme_table( array( 
+ 		'header' => $header,
+ 		'rows' => $rows,
+ 		'attributes' => array(),
+ 		'caption' => '',
+ 		'colgroups' => array(),
+ 		'sticky' => '',
+ 		'empty' => '' ) );
+ 	
+ 	$form['#suffix'] .= theme('pager');
+ 	
+	return $form;
+}
+
+function problem_archive_search_form_submit( $form, &$form_state )
+{
+	$form_state['rebuild'] = true;
+
+}
+function problem_archive_home()
+{
+	//drupal_add_js(drupal_get_path('module', 'problem_archive') . "/problem_archive.js");
+	
+	db_gateway_connect();
+	
+	$res = db_gateway_query_rows("SELECT * FROM Students");
+ 		
+	return drupal_get_form('problem_archive_search_form');
+}
+
+function problem_archive_menu()
+{
+	$items['problems/archive'] = array(
+		'title' => 'Problem Archive',
+		'page callback' => 'problem_archive_home',
+		'access arguments' => array('problem archive access'),
+		'type' => MENU_NORMAL_ITEM,
+	);
+
+	return $items;  
+}
+
+function problem_archive_permission()
+{
+	return array( "problem archive access" => array(
+		'title' => 'Problem Archive Access',
+		'description' => 'Provide Authenticated Users with access to the Problem Archive' ) );
+}
+
+
+

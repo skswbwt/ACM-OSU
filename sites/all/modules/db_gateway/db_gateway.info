@@ -1,0 +1,8 @@
+; $Id
+name = Database Gateway
+description = Provides function to safely access and query the database
+package = ACM
+core = 7.x
+files[] = db_gateway.module
+
+

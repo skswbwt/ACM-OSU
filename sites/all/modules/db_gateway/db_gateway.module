@@ -1,0 +1,131 @@
+<?php
+
+	// This file includes database functions
+	// Allows secure read/write access to the database
+	
+	/**
+	 * Connects to the MYSQL database and selects the designated database. returns a mysql link identifier
+	 */
+	 
+	function db_gateway_connect()
+	{
+		$dbhost = acm_site_settings('db_host');
+		$dbuser = acm_site_settings('db_user');
+		$dbpass = acm_site_settings('db_pass');
+		$dbname = acm_site_settings('db_name');
+		
+		$conn = mysql_connect( $dbhost, $dbuser, $dbpass );
+		
+		if( !$conn )
+			die( mysql_error() );
+			
+		mysql_select_db($dbname);
+		
+		return $conn;
+	}
+	
+	/**
+	 * Queries the database and returns the query as a mysql_result object
+	 * the query can be used as follows: db_gateway_query(SELECT * FROM Table where user = %s AND ID = %s,"userName", 127)
+	 * the query will be the same as SELECT * FROM Table where used = 'userName' AND ID = '127'
+	 */
+	 
+	function db_gateway_query()
+	{
+		$query = func_get_arg(0);
+		$args = array();
+		
+		for($i=1;$i<func_num_args();$i++)
+		{
+			$arg = func_get_arg( $i );
+			array_push( $args, "'" . mysql_real_escape_string( $arg ) . "'" );
+		}
+		
+		$query = vsprintf( $query , $args );
+		
+		//dsm( $query );
+		
+		$ret = mysql_query( $query );
+		
+		if( !$ret )
+			echo mysql_error();
+			
+		return $ret;
+	}
+	
+	/**
+	 * Queries the database and returns the the first row of the query
+	 * All queries should be in the same format as the query passed to db_gateway_query
+	 */
+	 
+	function db_gateway_query_row( $query )
+	{
+		$args = func_get_args();
+		
+		$result = call_user_func_array( "db_gateway_query", $args );
+		
+		$row = mysql_fetch_row( $result );
+		
+		return $row;
+	}
+
+	function db_gateway_query_row_assoc( $query )
+	{
+		$args = func_get_args();
+		
+		$result = call_user_func_array( "db_gateway_query", $args );
+		
+		$row = mysql_fetch_assoc( $result );
+		
+		return $row;
+	}	
+	/**
+	 * Queries the database and returns an associative array of all the rows
+	 * Array( 0 => firstRow,
+	 *		  1 => secondRow,
+	 *		  ... )
+	 * All queries should be in the same format as the query passed to db_gateway_query
+	 */
+	 
+	function db_gateway_query_rows()
+	{
+		$args = func_get_args();
+		
+		$result = call_user_func_array( "db_gateway_query", $args );
+		
+		$ret = array( );
+		
+		while( $row = mysql_fetch_row( $result ) )
+			array_push( $ret , $row );
+		
+		return $ret;
+	}
+
+	function db_gateway_query_rows_assoc()
+	{
+		$args = func_get_args();
+		
+		$result = call_user_func_array( "db_gateway_query", $args );
+		
+		$ret = array( );
+		
+		while( $row = mysql_fetch_assoc( $result ) )
+			array_push( $ret , $row );
+		
+		return $ret;
+	}	
+	/**
+	 * Queries the database and returns a value, useful to get a userId or other attributes
+	 * All queries should be in the same format as the query passed to db_gateway_query
+	 */
+	 
+	function db_gateway_query_value()
+	{
+		$args = func_get_args();
+		
+		$row = call_user_func_array( "db_gateway_query_row", $args );
+		
+		return $row[0];
+	}
+
+

@@ -1,0 +1,8 @@
+; $Id
+name = Problem Archive
+description = Search for and display problems.
+package = ACM
+core = 7.x
+files[] = problem_archive.module
+stylesheets[all][] = problem_archive.css
+

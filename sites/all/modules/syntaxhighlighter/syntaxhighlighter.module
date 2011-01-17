@@ -1,0 +1,445 @@
+<?php
+// $Id: syntaxhighlighter.module,v 1.53 2011/01/13 23:56:05 mattyoung Exp $
+
+/**
+ * @file
+ * Syntax highlight code using the Syntaxhighlighter javascript library.
+ * See http://alexgorbatchev.com/wiki/SyntaxHighlighter
+ *
+ * @author: Matthew Young <www.hddigitalworks.com/contact>
+ */
+
+
+/**
+ * Inject syntaxhighlighter on every page except the listed pages.
+ */
+define('SYNTAXHIGHLIGHTER_INJECT_EXCEPT_LISTED', 0);
+
+/**
+ * Inject syntaxhighlighter on only the listed pages.
+ */
+define('SYNTAXHIGHLIGHTER_INJECT_IF_LISTED', 1);
+
+/**
+ * Inject syntaxhighlighter if the associated PHP code returns TRUE.
+ */
+define('SYNTAXHIGHLIGHTER_INJECT_PHP', 2);
+
+define('SYNTAXHIGHLIGHTER_PHP_PERMISSION', 'use PHP for syntaxhighlighter js/css code inject control');
+
+
+
+/**
+ * Implements hook_permission().
+ */
+function syntaxhighlighter_permission() {
+  return array(
+    SYNTAXHIGHLIGHTER_PHP_PERMISSION => array(
+      'title' => t('Use PHP for syntaxhighlighter js/css code inject control'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+
+/**
+ * Menu for admin settings page
+ */
+function syntaxhighlighter_menu() {
+  $items['admin/config/content/syntaxhighlighter'] = array(
+    'title' => 'Syntax highlighter',
+    'description' => 'Configure syntax highlighter',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('syntaxhighlighter_settings_form'),
+    'access arguments' => array('administer modules'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'syntaxhighlighter.admin.inc',
+  );
+
+  return $items;
+}
+
+
+function syntaxhighlighter_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#syntaxhighlighter':
+      return _syntaxhighlighter_filter_tips(0, 0, TRUE);
+  }
+}
+
+
+function syntaxhighlighter_init() {
+  if (!_syntaxhighlighter_page_match()) {
+    return;
+  }
+
+  $lib_location = _syntaxhighlighter_get_lib_location();
+  $styles_path = $lib_location . '/styles/';
+  $scripts_path = $lib_location . '/scripts/';
+  $js_options = array('type' => 'file', 'group' => JS_DEFAULT, 'every_page' => TRUE);
+  
+  drupal_add_css($styles_path . 'shCore.css');
+  $theme = variable_get('syntaxhighlighter_theme', 'shThemeDefault.css');
+  drupal_add_css($styles_path . $theme);
+
+  drupal_add_js($scripts_path . 'shCore.js', $js_options);
+  if (variable_get('syntaxhighlighter_legacy_mode', 0)) {
+    drupal_add_js($scripts_path . 'shLegacy.js', $js_options);
+  }
+
+  if (variable_get('syntaxhighlighter_use_autoloader', FALSE)) {
+    drupal_add_js($scripts_path . 'shAutoloader.js', $js_options);
+    drupal_add_js(_syntaxhighlighter_file_directory_path() . '/syntaxhighlighter.autoloader.js', $js_options);
+    $settings['useAutoloader'] = TRUE;
+  }
+  else {
+    $enabled_languages = variable_get('syntaxhighlighter_enabled_languages', array('shBrushPhp.js'));
+    foreach ($enabled_languages as $lang) {
+      if (!empty($lang)) {
+        drupal_add_js($scripts_path . $lang, $js_options);
+      }
+    }
+  }
+
+  $tag_name = variable_get('syntaxhighlighter_tagname', 'pre');
+  if ($tag_name !== 'pre') {
+    $settings['tagName'] = $tag_name;
+  }
+  if (file_exists($scripts_path . 'clipboard.swf')) {
+    $settings['clipboard'] = base_path() . $scripts_path . 'clipboard.swf';
+  }
+  if (variable_get('syntaxhighlighter_legacy_mode', 0)) {
+    $settings['legacyMode'] = TRUE;
+  }
+
+  if (isset($settings)) {
+    drupal_add_js(array('syntaxhighlighter' => $settings), 'setting');
+  }
+  
+  if ($defaultExpression = variable_get('syntaxhighlighter_default_expressions', '')) {
+    drupal_add_js($defaultExpression, 'inline');
+  }
+
+  drupal_add_js(drupal_get_path('module', 'syntaxhighlighter') . '/syntaxhighlighter.min.js', array('type' => 'file', 'scope' => 'footer', 'group' => JS_DEFAULT, 'every_page' => TRUE));
+}
+
+
+function _syntaxhighlighter_page_match() {
+  $inject = variable_get('syntaxhighlighter_inject', SYNTAXHIGHLIGHTER_INJECT_EXCEPT_LISTED);
+  $pages = variable_get('syntaxhighlighter_pages', "admin\nadmin/*\nuser\nuser/*\nimce\nimce/*\n");
+  if ($inject != SYNTAXHIGHLIGHTER_INJECT_PHP) {
+    $path = drupal_get_path_alias($_GET['q']);
+    // Compare with the internal and path alias (if any).
+    $page_match = drupal_match_path($path, $pages);
+    if ($path != $_GET['q']) {
+      $page_match = $page_match || drupal_match_path($_GET['q'], $pages);
+    }
+    return !($inject xor $page_match);
+  }
+  else {
+    // if the PHP module is not enabled, we just return FALSE
+    // which just ends up disabling the syntaxhighlighter
+    return function_exists('php_eval') && php_eval($pages);
+  }
+}
+
+
+function syntaxhighlighter_modules_disabled($modules) {
+  if (in_array('php', $modules) && variable_get('syntaxhighlighter_inject', SYNTAXHIGHLIGHTER_INJECT_EXCEPT_LISTED) == SYNTAXHIGHLIGHTER_INJECT_PHP) {
+    drupal_set_message(t('The "%syntaxhighlighter" module is currently configured to use PHP for js/css code inject control, disabling the "%module_name" module will effectively turn off syntax highlighting on all pages.', array('%syntaxhighlighter' => t('Syntax highlighter'), '%module_name' => t('PHP filter'))), 'warning');
+  }
+}
+
+
+/**
+ * Implements hook_filter_info()
+ * 
+ * declare the syntaxhighlighter filter
+ */
+function syntaxhighlighter_filter_info() {
+  $filters['syntaxhighlighter'] = array(
+    'title' => t('Syntax highlighter'),
+    'description' => t('Process syntax highlighter filter code block'),
+    'tips callback' => '_syntaxhighlighter_filter_tips',
+    'prepare callback' => '_syntaxhighlighter_do_filter_prepare',
+    'process callback' => '_syntaxhighlighter_do_filter_process',
+    'cache' => TRUE,
+  );
+  return $filters;
+}
+
+
+function _syntaxhighlighter_filter_tips($filter, $format, $long = FALSE) {
+  if ($long) {
+      $tip[] = '<p>' . t('Syntax highlight code surrounded by the <code>!ex0</code> tags, where SPEC is a Syntaxhighlighter options string or "class="OPTIONS" title="the title".',
+                          array('!ex0' => '{syntaxhighlighter SPEC}...{/syntaxhighlighter}')) . '</p>';
+      $tip[] = '<p>' . t('Example: <code>!ex1</code>',
+                         array('!ex1' => '{syntaxhighlighter brush:php;collapse:true;first-line:50;highlight:[57,81,101];class-name:\'some_class some_other_class\'}...{/syntaxhighlighter}')) . '</p>';
+      $tip[] = '<p>' . t('This will syntax highlight PHP code, initially collapsed, start line number at 50, highlight lines 57, 81 and 101 and tag highlighted code with class names some_class and some_other_class.');
+      $tip[] = '<p>' . t('See <a href="!url0">the Syntaxhighlighter javascript library site</a> for additional helps.',
+                         array('!url0' => 'http://alexgorbatchev.com/')) . '</p>';
+      $tip = implode("\n", $tip);
+  }
+  else {
+    $tip = t('Syntax highlight code surrounded by the <code>!ex0</code> tags, where SPEC is a Syntaxhighlighter options string or class="OPTIONS" [title="the title"].',
+             array('!ex0' => '{syntaxhighlighter SPEC}...{/syntaxhighlighter}'));
+  }
+  return $tip;
+}
+
+
+/**
+ * Escape the content text in preparation for filtering. We do
+ * 1) put <pre>...</pre> around our {syntaxhighlighter OPTIONS} ...{/syntaxhighlighter}
+ *    tags to prevent other filter from messing with program code. We'll remove
+ *    the <pre>...</pre> pair in the filtering.
+ * 2) Replace any '<' and '>' with &lt; and &gt; inside.
+ *
+ * @param string $text
+ *   the content text to be filtered
+ * @return
+ *   the escape content text
+ */
+function _syntaxhighlighter_do_filter_prepare($text) {
+  preg_match_all('/\{ *syntaxhighlighter *[^}]+\}|\{\/ *syntaxhighlighter *\}/', $text, $matches, PREG_OFFSET_CAPTURE);
+  $output = '';
+  $at = 0;
+  for ($it = new ArrayIterator($matches[0]) ; $it->valid() ; $it->next()) {
+    $open_tag = $it->current();
+    $it->next();
+    $close_tag = $it->current();
+    $output .= substr($text, $at, $open_tag[1] - $at);
+    $end = $close_tag[1] + strlen($close_tag[0]);
+    $output .= '<pre>';
+    $output .= strtr(substr($text, $open_tag[1], $end - $open_tag[1]), array('<' => '&lt;', '>' => '&gt;'));
+    $output .= '</pre>';
+    $at = $close_tag[1] + strlen($close_tag[0]);
+  }
+  $output .= substr($text, $at);
+  return $output;
+}
+
+
+/**
+ * Filter {syntaxhighlighter options}program code{/syntaxhighlighter} into
+ * <pre class="options">program code</pre>
+ *
+ * We make sure if there is " inside options, they become ' so the HTML
+ * in the end is proper
+ */
+function _syntaxhighlighter_do_filter_process($text) {
+  $patterns = array(
+    '/\<pre>{ *syntaxhighlighter *([^}]+)\}/e',
+    '/\{\/ *syntaxhighlighter *\}<\/pre>/',
+  );
+  $tag_name = variable_get('syntaxhighlighter_tagname', 'pre');
+  $replacements = array(
+    "_syntaxhighlighter_replace('$1')",
+    "</$tag_name>",
+  );
+  return preg_replace($patterns, $replacements, $text);
+}
+
+
+/**
+ * Validate on the node input text to be sure there is no bad
+ * {syntaxhighlighter} tags
+ */
+function syntaxhighlighter_node_validate($node, $form, &$form_state) {
+  foreach ($node->body as $lang => $v) {
+    if (_syntaxhighlighter_format_has_syntaxhighlighter_filter($v[0]['format'])) {
+      if (!empty($v[0]['summary'])) {
+        _syntaxhighlighter_validate_input("body][$lang][0][summary", $v[0]['summary']);
+      }
+      _syntaxhighlighter_validate_input("body][$lang][0][value", $v[0]['value']);
+    }
+  }
+}
+
+
+/**
+ * Install custom comment validate function
+ */
+function syntaxhighlighter_form_comment_form_alter(&$form, &$form_state, $form_id) {
+  $form['#validate'][] = '_syntaxhighlighter_comment_validate';
+}
+
+
+/**
+ * Validate on comment input text to be sure there is no bad
+ * {syntaxhighlighter} tags
+ */
+function _syntaxhighlighter_comment_validate($form, &$form_state) {
+  foreach ($form_state['values']['comment_body'] as $lang => $v) {
+    if (_syntaxhighlighter_format_has_syntaxhighlighter_filter($v[0]['format'])) {
+      _syntaxhighlighter_validate_input("comment_body][$lang][0][value", $v[0]['value']);
+    }
+  }
+}
+
+
+/**
+ * Check for error with syntaxhighlighter input
+ *
+ * @param string $field
+ *   what input field are we checking? We do form_set_error on this if
+ *   any error is found
+ * @param string $text
+ *   the input text to check for
+ */
+function _syntaxhighlighter_validate_input($field, $text) {
+  $errors = array();
+
+  // check for balance open/close tags
+  preg_match_all('/\{ *syntaxhighlighter *[^}]+\}/', $text, $matches_open, PREG_OFFSET_CAPTURE);
+  preg_match_all('/\{\/ *syntaxhighlighter *\}/', $text, $matches_close, PREG_OFFSET_CAPTURE);
+  if (count($matches_open[0]) != count($matches_close[0])) {
+    $errors[] = format_plural(count($matches_open[0]) <= 1 && count($matches_close[0]) <= 1,
+      '{syntaxhighlighter} tag not balanced: open and close tags must match.',
+      '{syntaxhighlighter} tags not balanced: open and close tags must match.');
+  }
+
+  // make sure no nesting
+  preg_match_all('/\{ *syntaxhighlighter *[^}]+\}.*\{\/ *syntaxhighlighter *\}/sU', $text, $matches_pair, PREG_OFFSET_CAPTURE);
+  if (count($matches_pair[0]) != 0 && (count($matches_pair[0]) != count($matches_open[0]) || count($matches_pair[0]) != count($matches_close[0]))) {
+    $errors[] = format_plural(count($matches_open[0]) <= 1 && count($matches_close[0]) <= 1,
+      '{syntaxhighlighter} tag cannot be nested. If you need to show the {syntaxhighlighter}/{/syntaxhighlighter} strings in syntax highlighted code, show them in escape form as <code>&amp;#123;syntaxhighlighter OPTIONS&amp;#125;</code> and <code>&amp;#123;/syntaxhighlighter&amp;#125;</code>',
+      '{syntaxhighlighter} tags cannot be nested. If you need to show the {syntaxhighlighter}/{/syntaxhighlighter} strings in syntax highlighted code, show them in escape form as <code>&amp;#123;syntaxhighlighter OPTIONS&amp;#125;</code> and <code>&amp;#123;/syntaxhighlighter&amp;#125;</code>');
+  }
+
+  if (!empty($errors)) {
+    form_set_error($field, implode('<br />', $errors));
+  }
+}
+
+
+/**
+ * Escape " to ' in OPTIONS string
+ */
+function _syntaxhighlighter_replace($x) {
+  $x = strtr($x, array('\\"' => "'"));
+  $tag_name = variable_get('syntaxhighlighter_tagname', 'pre');
+  if (_syntaxhighlighter_string_begins_with($x, 'class') || _syntaxhighlighter_string_begins_with($x, 'title')) {
+    return "<$tag_name $x>";
+  }
+  else {
+    return "<$tag_name class=\"$x\">";
+  }
+}
+
+
+function _syntaxhighlighter_string_begins_with($string, $search) {
+  return (0 == strncmp($string, $search, strlen($search)));
+}
+
+
+/**
+ * @return the directory path where the syntaxhighlighter js lib is installed, NULL if not found
+ */
+function _syntaxhighlighter_get_lib_location() {
+  $result = variable_get('syntaxhighlighter_lib_location', NULL);
+  if (!$result) {
+    $result = _syntaxhighlighter_scan_lib_location();
+    variable_set('syntaxhighlighter_lib_location', $result);
+    // library location may have changed, recreate the setup script if the lib
+    // is found
+    if ($result) {
+      _syntaxhighlighter_setup_autoloader_script();
+    }
+  }
+  return $result;
+}
+
+
+/**
+ * Do an exhaustive scan of file directories for the location of the syntaxhighlighter js lib,
+ * Allow the syntaxhighlighter js library to be installed in any of the following
+ * locations and under any sub-directory (except 'src'):
+ *   1) syntaxhighlighter module directory
+ *   2) sites/<site_domain>/files    (whereever the file_directory_path() is)
+ *   3) sites/all/libraries
+ *   4) the install profile libraries directory
+ * @return the file location of the js lib or NULL if not found
+ */
+function _syntaxhighlighter_scan_lib_location() {
+  $directories = array(
+    drupal_get_path('module', 'syntaxhighlighter'),
+    _syntaxhighlighter_file_directory_path(),
+    'sites/all/libraries',
+  );
+  // When this function is called during Drupal's initial installation process,
+  // the name of the profile that is about to be installed is stored in the
+  // global $profile variable. At all other times, the regular system variable
+  // contains the name of the current profile, and we can call variable_get()
+  // to determine the profile.
+  global $profile;
+  if (!isset($profile)) {
+    $profile = variable_get('install_profile', 'default');
+  }
+  $directories[] = "profiles/$profile/libraries";
+
+  foreach ($directories as $d) {
+    // note: file_scan_directory() returns a empty array if no file is found
+    // in which case the foreach loop is not enter
+    foreach (file_scan_directory($d, '/shCore\.js$/', array('nomask' => '/(\.\.?|CVS|src|pupload)$/')) as $filename => $file_info) {
+      // the path to syntaxhighlighter lib, (-18 to chop off "/scripts/shCore.js"
+      // part at the end
+      return substr($filename, 0, -18);
+    }
+  }
+  return NULL;
+}
+
+
+/**
+ * Create the autoload setup script file. Must call this whenever lib
+ * location  and/or the enable brushes change.  Make sure never call this
+ * if the js lib is not found
+ */
+function _syntaxhighlighter_setup_autoloader_script() {
+  $path = 'public://syntaxhighlighter.autoloader.js';
+  if (variable_get('syntaxhighlighter_use_autoloader', FALSE)) {
+    // use variable_get() instead of _syntaxhighlighter_get_lib_location()
+    // because this function is called only if the lib location is found
+    $script_path = base_path() . variable_get('syntaxhighlighter_lib_location', NULL) . '/scripts/';
+    $script_data = <<<HEREHERE
+/*
+ * This file is generated by the Syntaxhighlighter module
+ */
+HEREHERE;
+    $script_data .= "\nfunction syntaxhighlighterAutoloaderSetup() {\n  SyntaxHighlighter.autoloader(\n";
+    $need_ending = FALSE;
+    $brushes = variable_get('syntaxhighlighter_enabled_languages', array('shBrushPhp.js'));
+    foreach ($brushes as $b) {
+      if ($b) {
+        if ($need_ending) {
+          $script_data .= ",\n";
+        }
+        $alias = strtolower(substr(substr($b, 7), 0, -3));
+        $script_data .= "    '$alias $script_path$b'";
+        $need_ending = TRUE;
+      }
+    }
+    $script_data .= "\n);\n}\n";
+    file_unmanaged_save_data($script_data, $path, FILE_EXISTS_REPLACE);
+  }
+  else {
+    file_unmanaged_delete($path);
+  }
+}
+
+
+/**
+ * This does the same thing as the old D6 file_directory_path() which
+ * is to give the default 'files' directory path relative the the web root
+ * 
+ * @return a string containing the path to the site's 'files' directory
+ */
+function _syntaxhighlighter_file_directory_path() {
+  return substr(drupal_realpath('public://'), strlen(DRUPAL_ROOT) + 1);
+}
+
+
+function _syntaxhighlighter_format_has_syntaxhighlighter_filter($format_id) {
+  return array_key_exists('syntaxhighlighter', filter_list_format($format_id));
+}
