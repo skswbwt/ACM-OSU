@@ -3,3 +3,8 @@
 {
 	clear: both;
 }
+
+#edit-problemdiff, #edit-problemsrc
+{
+	padding: 0;
+}

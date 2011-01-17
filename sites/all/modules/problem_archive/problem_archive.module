@@ -2,19 +2,52 @@
 
 function problem_archive_search_form($form, &$form_state)
 {
-	dsm($form);
-	dsm($form_state);
-	
+	dsm( $form_state );
+	dsm( variable_get( 'problemSrc', '' ) );
 	$form = array();
 
-	$header = array(
-		'problemCats' => 'Problem Categories',
+	$form['problemName'] = array
+	(
+		'#type' => 'textfield',
+		'#title' => 'Problem Name',
+		'#size' => 30
 	);
+	
+	$form['problemDiff'] = array
+	(
+		'#type' => 'select',
+		'#title' => 'Problem Difficulty',
+		'#options' => array
+		(
+			'' => '',
+			'1' => 'Easy',
+			'2' => 'Medium',
+			'3' => 'Hard',
+			'4' => 'Expert'
+		)
+	);	
+
+	$form['problemSrc'] = array
+	(
+		'#type' => 'select',
+		'#title' => 'Problem Source',
+		'#options' => array
+		(
+			'' => '',
+			'1' => 'TopCoder',
+			'2' => 'UVA',
+			'3' => 'USACO',
+			'4' => 'SPOJ'
+		)
+	);
+	
+	$header = array('problemCats' => 'Problem Categories');
 
 	$options1 = array();
 	$options2 = array();
 
-	$allCats = array(
+	$allCats = array
+	(
 		"String Manipulation",
 		"String Parsing",
 		"Simulation",
@@ -38,16 +71,17 @@ function problem_archive_search_form($form, &$form_state)
 	for($i=8;$i<count( $allCats );$i++)
 		$options2[ $allCats[ $i ] ] = array( 'problemCats' => $allCats[ $i ] );
 
-	$form['nodes1'] = array(
+	$form['nodes1'] = array
+	(
 		'#type' => 'tableselect',
 		'#header' => $header,
 		'#options' => $options1,
 		'#attributes' => array( 'style' => 'float:left; width:45%' ),
-		//'#default_value' => variable_get( 'nodes1', array( 0,3 ) 
 		'#empty' => t('No items available'),
 	);
 
-	$form['nodes2'] = array(
+	$form['nodes2'] = array
+	(
 		'#type' => 'tableselect',
 		'#header' => $header,
 		'#options' => $options2,
@@ -55,19 +89,21 @@ function problem_archive_search_form($form, &$form_state)
 		'#empty' => t('No items available'),
 	);
 
-	$form['matchCats'] = array(
+	$form['matchCats'] = array
+	(
 		'#type' => 'radios',
 		'#title' => 'Matching Options',
 		'#options' => array( 'Match Any Category', 'Match All Categories' ),
-		'#default_value' => variable_get('matchCats', 0),
 	);
 
-	$form['submit'] = array(
+	$form['submit'] = array
+	(
 		'#type' => 'submit',
 		'#value' => 'Search',
 	);
 	
-	$header = array( 
+	$header = array
+	( 
 		array('data' => t('Problem Name'), 'field' => 'name'),
 		array('data' => t('Difficulty'), 'field' => 'diff'),
 		array('data' => t('Categories'), 'field' => 'cat'),
@@ -95,7 +131,9 @@ function problem_archive_search_form($form, &$form_state)
 									ORDER BY " . $ts['sql'] . ' ' . $ts['sort'] . "
 									LIMIT " . $offset . ',' . $num_per_page);
 	
-	$form['#suffix'] = theme_table( array( 
+	$form['#suffix'] = theme_table
+	( array
+		( 
  		'header' => $header,
  		'rows' => $rows,
  		'attributes' => array(),
