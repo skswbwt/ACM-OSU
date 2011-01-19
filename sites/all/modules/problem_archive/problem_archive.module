@@ -3,7 +3,7 @@
 function problem_archive_search_form($form, &$form_state)
 {
 	dsm( $form_state );
-	dsm( variable_get( 'problemSrc', '' ) );
+	
 	$form = array();
 
 	$form['problemName'] = array
@@ -13,7 +13,7 @@ function problem_archive_search_form($form, &$form_state)
 		'#size' => 30
 	);
 	
-	$form['problemDiff'] = array
+	$form['problemDifficulty'] = array
 	(
 		'#type' => 'select',
 		'#title' => 'Problem Difficulty',
@@ -34,10 +34,10 @@ function problem_archive_search_form($form, &$form_state)
 		'#options' => array
 		(
 			'' => '',
-			'1' => 'TopCoder',
-			'2' => 'UVA',
-			'3' => 'USACO',
-			'4' => 'SPOJ'
+			'TopCoder' => 'TopCoder',
+			'UVA' => 'UVA',
+			'USACO' => 'USACO',
+			'SPOJ' => 'SPOJ'
 		)
 	);
 	
@@ -77,6 +77,7 @@ function problem_archive_search_form($form, &$form_state)
 		'#header' => $header,
 		'#options' => $options1,
 		'#attributes' => array( 'style' => 'float:left; width:45%' ),
+		'#element_validate' => array('prob_valid'),
 		'#empty' => t('No items available'),
 	);
 
@@ -114,22 +115,58 @@ function problem_archive_search_form($form, &$form_state)
 	);
 	
 	db_gateway_connect();
-
+	
+	// filter problems using selected criteria
+	$prob_name = site_settings_default_state( 'problemName', '', $form_state );
+	$prob_diff = site_settings_default_state( 'problemDifficulty', '', $form_state );
+	$prob_src = site_settings_default_state( 'problemSrc', '', $form_state );
+	$matching = site_settings_default_state( 'matchCats', '0', $form_state ) == '0' ? 'OR' : 'AND';
+	$node1_choices = site_settings_default_state( 'nodes1', array(), $form_state );
+	$node2_choices = site_settings_default_state( 'nodes2', array(), $form_state );
+	$all_choices = array();
+	
+	foreach( $node1_choices as $key => $val )
+		if( $val == $key )
+			array_push( $all_choices, '%' . $key . '%' );
+	
+	foreach( $node2_choices as $key => $val )
+		if( $val == $key )
+			array_push( $all_choices, '%' . $key . '%' );
+			
+	$search_sql = ' AND name LIKE %s AND lvl LIKE %s AND src LIKE %s ';
+	
+	for( $i=0;$i<count( $all_choices );$i++ )
+	{
+		if( $i == 0 )
+			$search_sql .= " AND ( cat LIKE %s ";
+		else
+			$search_sql .= $matching . " cat LIKE %s ";
+	}
+	
+	if( !empty( $all_choices ) )
+		$search_sql .= " )";
+		
 	$ts = tablesort_init($header);
 	
-	$total = db_gateway_query_value("SELECT COUNT(*) AS num FROM Problems");
+	$total = db_gateway_query_value("SELECT COUNT(*) 
+									FROM Problems, map_difficulty 
+									WHERE lvl = map_diff_id" . $search_sql,
+									'%' . $prob_name . '%', '%' . $prob_diff . '%', '%' . $prob_src . '%', $all_choices );
 	
 	$num_per_page = 25;
 
 	$curPage = pager_default_initialize($total, $num_per_page);
 	
 	$offset = $num_per_page * $curPage;
-					
+	
 	$rows = db_gateway_query_rows("SELECT name, map_diff_text AS diff, cat, src, usedIn, date 
 									FROM Problems, map_difficulty 
-									WHERE lvl = map_diff_id 
+									WHERE lvl = map_diff_id" . $search_sql . "
 									ORDER BY " . $ts['sql'] . ' ' . $ts['sort'] . "
-									LIMIT " . $offset . ',' . $num_per_page);
+									LIMIT " . $offset . ',' . $num_per_page,
+									'%' . $prob_name . '%', '%' . $prob_diff . '%', '%' . $prob_src . '%', $all_choices );
+	
+
 	
 	$form['#suffix'] = theme_table
 	( array
@@ -142,11 +179,17 @@ function problem_archive_search_form($form, &$form_state)
  		'sticky' => '',
  		'empty' => '' ) );
  	
- 	$form['#suffix'] .= theme('pager');
+ 	$form['#suffix'] .= theme('pager') . ' Total ' . $total;
  	
+ 	$form['#action'] = url('problems/archive');
 	return $form;
 }
 
+function prob_valid( $element, &$form_state )
+{
+	dsm( $element );
+	dsm( $form_state );
+}
 function problem_archive_search_form_submit( $form, &$form_state )
 {
 	$form_state['rebuild'] = true;
@@ -154,7 +197,7 @@ function problem_archive_search_form_submit( $form, &$form_state )
 }
 function problem_archive_home()
 {
-	//drupal_add_js(drupal_get_path('module', 'problem_archive') . "/problem_archive.js");
+	drupal_add_js(drupal_get_path('module', 'problem_archive') . "/problem_archive.js");
 	
 	db_gateway_connect();
 	

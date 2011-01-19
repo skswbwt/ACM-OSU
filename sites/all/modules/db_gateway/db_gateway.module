@@ -38,12 +38,17 @@
 		for($i=1;$i<func_num_args();$i++)
 		{
 			$arg = func_get_arg( $i );
-			array_push( $args, "'" . mysql_real_escape_string( $arg ) . "'" );
+			
+			if( is_array( $arg ) )
+				foreach( $arg as $val )
+					array_push( $args, "'" . mysql_real_escape_string( $val ) . "'" );
+			else
+				array_push( $args, "'" . mysql_real_escape_string( $arg ) . "'" );
 		}
 		
 		$query = vsprintf( $query , $args );
 		
-		//dsm( $query );
+		dsm( $query );
 		
 		$ret = mysql_query( $query );
 		
